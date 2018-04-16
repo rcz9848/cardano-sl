@@ -41,8 +41,9 @@ import           Formatting (build, sformat, (%))
 import           Servant.API.ContentTypes (NoContent (..))
 import           System.Wlog (WithLogger)
 
-import           Pos.Client.KeyStorage (MonadKeys (..), MonadKeysRead, addSecretKey,
-                                        deleteSecretKeyBy)
+import           Pos.Client.KeyStorage (MonadKeys (..),
+                                        MonadKeysRead,
+                                        addSecretKey, deleteSecretKeyBy)
 import           Pos.Core (Address, Coin, mkCoin, sumCoins, unsafeIntegerToCoin)
 import           Pos.Core.Configuration (HasConfiguration)
 import           Pos.Crypto (PassPhrase, changeEncPassphrase, checkPassMatches, emptyPassphrase)
@@ -165,13 +166,25 @@ getWalletIncludeUnready :: MonadWalletLogicRead ctx m
                         -> ([(TxId, TxAux)], UndoMap) -- ^ Transactions and UndoMap from mempool
                         -> Bool -> CId Wal -> m CWallet
 getWalletIncludeUnready ws mps includeUnready cAddr = do
+    putText "getWalletIncludeUnready, 1-------------------"
     meta       <- maybeThrow noWallet $ getWalletMetaIncludeUnready ws includeUnready cAddr
+    putText "getWalletIncludeUnready, 2-------------------"
     accounts   <- getAccountsIncludeUnready ws mps includeUnready (Just cAddr)
+    putText "getWalletIncludeUnready, 3-------------------"
     let accountsNum = length accounts
-    accMod     <- txMempoolToModifier ws mps . eskToWalletDecrCredentials =<< findKey cAddr
+    putText "getWalletIncludeUnready, 4-------------------"
+    key        <- findKey cAddr
+    putText "getWalletIncludeUnready, 4-1-------------------"
+    accMod     <- txMempoolToModifier ws mps . eskToWalletDecrCredentials $ key
+    putText "getWalletIncludeUnready, 5-------------------"
     balance    <- computeBalance accMod
-    hasPass    <- isNothing . checkPassMatches emptyPassphrase <$> getSKById cAddr
+    putText "getWalletIncludeUnready, 6-------------------"
+    hasPass    <- getSKById cAddr >>= \case
+                      Nothing -> return False -- No secret key, it's external wallet, so no password.
+                      Just sk -> return $ isNothing . checkPassMatches emptyPassphrase $ sk
+    putText "getWalletIncludeUnready, 7-------------------"
     passLU     <- maybeThrow noWallet (getWalletPassLU ws cAddr)
+    putText "getWalletIncludeUnready, 8-------------------"
     pure $ CWallet cAddr meta accountsNum balance hasPass passLU
   where
     computeBalance accMod = do
@@ -282,13 +295,15 @@ createWalletSafe cid wsMeta isReady = do
     ws <- getWalletSnapshot db
     mps <- withTxpLocalData getMempoolSnapshot
     let wSetExists = isJust $ getWalletMetaIncludeUnready ws True cid
-    when wSetExists $
-        throwM $ RequestError "Wallet with that mnemonics already exists"
+    when wSetExists $ throwM suchWalletIsAlreadyHere
     curTime <- liftIO getPOSIXTime
     createWallet db cid wsMeta isReady curTime
     -- Return the newly created wallet irrespective of whether it's ready yet
     ws' <- getWalletSnapshot db
     getWalletIncludeUnready ws' mps True cid
+  where
+    suchWalletIsAlreadyHere = RequestError $
+        sformat ("createWalletSafe: Wallet with that id "%build%" already exists") cid
 
 markWalletReady
   :: MonadWalletLogic ctx m
@@ -341,7 +356,9 @@ changeWalletPassphrase
     :: MonadWalletLogic ctx m
     => CId Wal -> PassPhrase -> PassPhrase -> m NoContent
 changeWalletPassphrase wid oldPass newPass = do
-    oldSK <- getSKById wid
+    -- Spending password is related to internal wallet only,
+    -- so secret key must be here.
+    oldSK <- maybeThrow noSuchWallet =<< getSKById wid
 
     unless (isJust $ checkPassMatches newPass oldSK) $ do
         db <- askWalletDB
@@ -352,6 +369,7 @@ changeWalletPassphrase wid oldPass newPass = do
     return NoContent
   where
     badPass = RequestError "Invalid old passphrase given"
+    noSuchWallet = RequestError $ sformat ("Change password, no wallet with id "%build%" found") wid
 
 ----------------------------------------------------------------------------
 -- Helper functions

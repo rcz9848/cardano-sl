@@ -32,8 +32,9 @@ import           System.Wlog (HasLoggerName (..))
 
 import           Pos.Block.BListener (MonadBListener (..))
 import           Pos.Block.Slog (HasSlogContext (..), HasSlogGState (..))
-import           Pos.Client.KeyStorage (MonadKeys (..), MonadKeysRead (..), getSecretDefault,
-                                        modifySecretDefault)
+import           Pos.Client.KeyStorage (MonadKeys (..), MonadKeysRead (..),
+                                        getSecretDefault, getPublicDefault,
+                                        modifySecretDefault, modifyPublicDefault)
 import           Pos.Client.Txp.Addresses (MonadAddresses (..))
 import           Pos.Client.Txp.Balances (MonadBalances(..), getBalanceFromUtxo,
                                           getOwnUtxosGenesis)
@@ -66,6 +67,7 @@ import           Pos.Util.JsonLog (HasJsonLogConfig (..))
 import           Pos.Util.LoggerName (HasLoggerName' (..))
 import           Pos.Util.TimeWarp (CanJsonLog (..))
 import           Pos.Util.UserSecret (HasUserSecret (..))
+import           Pos.Util.UserPublic (HasUserPublic (..))
 import           Pos.WorkMode (EmptyMempoolExt, RealMode, RealModeContext (..))
 
 type AuxxMode = ReaderT AuxxContext Production
@@ -117,6 +119,9 @@ instance HasReportingContext AuxxContext  where
 
 instance HasUserSecret AuxxContext where
     userSecret = acRealModeContext_L . userSecret
+
+instance HasUserPublic AuxxContext where
+    userPublic = acRealModeContext_L . userPublic
 
 instance HasShutdownContext AuxxContext where
     shutdownContext = acRealModeContext_L . shutdownContext
@@ -217,9 +222,11 @@ instance (HasConfigurations, HasCompileInfo) =>
 
 instance MonadKeysRead AuxxMode where
     getSecret = getSecretDefault
+    getPublic = getPublicDefault
 
 instance MonadKeys AuxxMode where
     modifySecret = modifySecretDefault
+    modifyPublic = modifyPublicDefault
 
 type instance MempoolExt AuxxMode = EmptyMempoolExt
 
