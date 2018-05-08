@@ -76,7 +76,7 @@ transactionSpecs wRef wc = do
             eresp <- getTransactionIndex wc (Just (walId wallet)) (Just (accIndex toAcct)) Nothing
             resp <- fmap wrData eresp `shouldPrism` _Right
 
-            map txId resp `shouldContain` [txId txn]
+            map txId resp `shouldNotContain` [txId txn]
 
         it "estimate fees of a well-formed transaction" $ do
             ws <- (,)
